@@ -1,0 +1,115 @@
+# Definitions
+
+- Aspect: The subject or feature being discussed. It should be a noun or noun phrase, presented in its original form (singular or plural).
+- Reason: The rationale or justification for supporting or opposing the topic. This can be the full statement or phrase expressing the reason.
+- Topic: Provides context to help understand the argument. Do not extract reasons from the topic itself.
+
+# Steps
+
+1. If a topic is provided, use it only for context. Do not extract reasons from the topic itself.
+
+2. For each entity:
+   - entity_name: The full text of the comment or the extracted reason. Do not use pronouns or conjunctions at the beginning. For REASON, do not include "Social media platforms should be regulated by the government", "Routine child vaccinations should be mandatory", "The USA is a good country to live in", because they are topic and they are not reasons. You can should start with "To...." 
+   - entity_type: Use 'COMMENT' for the original comment, 'REASON' for extracted reason positioning pro or con against Topic. 
+   - entity_description: Brief description of the entity.
+   
+   Format: ("entity"{tuple_delimiter}<entity_name>{tuple_delimiter}<entity_type>{tuple_delimiter}<entity_description>)
+
+3. For each extracted reason, create a relationship with the main comment:
+   - Comment: The full text of the original comment
+   - Reason: The extracted reason related to the comment
+   - ACOS Description: A description that connects the reason to the main comment and specifies whether it supports or opposes the topic
+   - relationship_strength: Always use 9 as the strength
+   
+   Format: ("relationship"{tuple_delimiter}<Comment>{tuple_delimiter}<Reason>{tuple_delimiter}<ACOS Description>{tuple_delimiter}<relationship_strength>)
+
+4. Return output in English as a single list of all the entities and relationships. Use {record_delimiter} as the list delimiter.
+
+5. When finished, output {completion_delimiter}
+
+# Examples
+
+## Example 1
+
+Topic: Social media platforms should be regulated by the government
+argument: Governments should regulate social media to prevent the spread of misinformation and protect user privacy.
+
+Output:
+("entity"{tuple_delimiter}Governments should regulate social media to prevent the spread of misinformation and protect user privacy{tuple_delimiter}COMMENT{tuple_delimiter}The original comment expressing reasons for government regulation of social media)
+{record_delimiter}
+("entity"{tuple_delimiter}Regulation prevents the spread of misinformation{tuple_delimiter}REASON{tuple_delimiter}A reason supporting government regulation of social media)
+{record_delimiter}
+("entity"{tuple_delimiter}Regulation protects user privacy{tuple_delimiter}REASON{tuple_delimiter}Another reason supporting government regulation of social media)
+{record_delimiter}
+("relationship"{tuple_delimiter}Governments should regulate social media to prevent the spread of misinformation and protect user privacy{tuple_delimiter}Regulation prevents the spread of misinformation{tuple_delimiter}This reason supports the topic by arguing that government regulation can prevent misinformation on social media{tuple_delimiter}9)
+{record_delimiter}
+("relationship"{tuple_delimiter}Governments should regulate social media to prevent the spread of misinformation and protect user privacy{tuple_delimiter}Regulation protects user privacy{tuple_delimiter}This reason supports the topic by arguing that government regulation can protect user privacy on social media{tuple_delimiter}9)
+{completion_delimiter}
+
+## Example 2
+
+Topic: Routine child vaccinations should be mandatory
+argument: Vaccination of children should be limited as it affects child development.
+
+Output:
+("entity"{tuple_delimiter}Vaccination of children should be limited as it affects child development{tuple_delimiter}COMMENT{tuple_delimiter}The original comment expressing a reason against mandatory childhood vaccinations)
+{record_delimiter}
+("entity"{tuple_delimiter}Vaccination affects child development{tuple_delimiter}REASON{tuple_delimiter}A reason opposing mandatory childhood vaccinations)
+{record_delimiter}
+("relationship"{tuple_delimiter}Vaccination of children should be limited as it affects child development{tuple_delimiter}Vaccination affects child development{tuple_delimiter}This reason opposes the topic by arguing that vaccinations may negatively impact child development{tuple_delimiter}9)
+{completion_delimiter}
+
+## Example 3
+
+Topic: The USA is a good country to live in
+argument: High crime rates, racism, xenophobia, high tax rates, many negative points, it is not a good country to live in
+
+Output:
+("entity"{tuple_delimiter}High crime rates, racism, xenophobia, high tax rates, many negative points, it is not a good country to live in{tuple_delimiter}COMMENT{tuple_delimiter}The original comment expressing reasons against living in the USA)
+{record_delimiter}
+("entity"{tuple_delimiter}High crime rates make the USA not a good place to live{tuple_delimiter}REASON{tuple_delimiter}A reason opposing the idea that the USA is a good country to live in)
+{record_delimiter}
+("entity"{tuple_delimiter}Racism makes the USA not a good place to live{tuple_delimiter}REASON{tuple_delimiter}Another reason opposing the idea that the USA is a good country to live in)
+{record_delimiter}
+("entity"{tuple_delimiter}Xenophobia makes the USA not a good place to live{tuple_delimiter}REASON{tuple_delimiter}A third reason opposing the idea that the USA is a good country to live in)
+{record_delimiter}
+("entity"{tuple_delimiter}High tax rates make the USA not a good place to live{tuple_delimiter}REASON{tuple_delimiter}A fourth reason opposing the idea that the USA is a good country to live in)
+{record_delimiter}
+("relationship"{tuple_delimiter}High crime rates, racism, xenophobia, high tax rates, many negative points, it is not a good country to live in{tuple_delimiter}High crime rates make the USA not a good place to live{tuple_delimiter}This reason opposes the topic by arguing that high crime rates make the USA an undesirable place to live{tuple_delimiter}9)
+{record_delimiter}
+("relationship"{tuple_delimiter}High crime rates, racism, xenophobia, high tax rates, many negative points, it is not a good country to live in{tuple_delimiter}Racism makes the USA not a good place to live{tuple_delimiter}This reason opposes the topic by arguing that racism makes the USA an undesirable place to live{tuple_delimiter}9)
+{record_delimiter}
+("relationship"{tuple_delimiter}High crime rates, racism, xenophobia, high tax rates, many negative points, it is not a good country to live in{tuple_delimiter}Xenophobia makes the USA not a good place to live{tuple_delimiter}This reason opposes the topic by arguing that xenophobia makes the USA an undesirable place to live{tuple_delimiter}9)
+{record_delimiter}
+("relationship"{tuple_delimiter}High crime rates, racism, xenophobia, high tax rates, many negative points, it is not a good country to live in{tuple_delimiter}High tax rates make the USA not a good place to live{tuple_delimiter}This reason opposes the topic by arguing that high tax rates make the USA an undesirable place to live{tuple_delimiter}9)
+{completion_delimiter}
+
+## Example 4
+
+Topic: The USA is a good country to live in
+argument: is the first power in the world, and therefore there are more opportunities
+
+Output:
+("entity"{tuple_delimiter}Is the first power in the world, and therefore there are more opportunities{tuple_delimiter}COMMENT{tuple_delimiter}The original comment expressing reasons for living in the USA)
+{record_delimiter}
+("entity"{tuple_delimiter}The USA is the first power in the world{tuple_delimiter}REASON{tuple_delimiter}A reason supporting the idea that the USA is a good country to live in)
+{record_delimiter}
+("entity"{tuple_delimiter}There are more opportunities in the USA{tuple_delimiter}REASON{tuple_delimiter}Another reason supporting the idea that the USA is a good country to live in)
+{record_delimiter}
+("relationship"{tuple_delimiter}Is the first power in the world, and therefore there are more opportunities{tuple_delimiter}The USA is the first power in the world{tuple_delimiter}This reason supports the topic by arguing that the USA's status as a world power makes it a good place to live{tuple_delimiter}9)
+{record_delimiter}
+("relationship"{tuple_delimiter}Is the first power in the world, and therefore there are more opportunities{tuple_delimiter}There are more opportunities in the USA{tuple_delimiter}This reason supports the topic by arguing that more opportunities make the USA a good place to live{tuple_delimiter}9)
+{completion_delimiter}_delimiter}
+("entity"{tuple_delimiter}There are more opportunities in the USA{tuple_delimiter}REASON{tuple_delimiter}Another reason supporting the idea that the USA is a good country to live in)
+{record_delimiter}
+("relationship"{tuple_delimiter}Is the first power in the world, and therefore there are more opportunities{tuple_delimiter}The USA is the first power in the world{tuple_delimiter}This reason supports the topic by arguing that the USA's status as a world power makes it a good place to live{tuple_delimiter}9)
+{record_delimiter}
+("relationship"{tuple_delimiter}Is the first power in the world, and therefore there are more opportunities{tuple_delimiter}There are more opportunities in the USA{tuple_delimiter}This reason supports the topic by arguing that more opportunities make the USA a good place to live{tuple_delimiter}9)
+{completion_delimiter}
+
+
+# Real Data
+######################
+{input_text}
+######################
+output:
