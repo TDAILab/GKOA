@@ -310,34 +310,6 @@ def load_summary_entities(folder_path):
         return None
 
 
-def create_similarity_heatmap(entities, summary_entities):
-    similarities = []
-    for _, entity in entities.iterrows():
-        entity_similarities = []
-        for _, summary_entity in summary_entities.iterrows():
-            sim = calculate_cosine_similarity(entity['name_embedding'], summary_entity['name_embedding'])
-            entity_similarities.append(sim)
-        similarities.append(entity_similarities)
-
-    fig = go.Figure(data=go.Heatmap(
-        z=similarities,
-        x=summary_entities['name'],
-        y=entities['name'],
-        colorscale='Viridis',
-        colorbar=dict(title='Cosine Similarity')
-    ))
-
-    fig.update_layout(
-        title='Cosine Similarity Heatmap',
-        xaxis_title='Summary Entities',
-        yaxis_title='Original Entities',
-        height=800,
-        width=1000
-    )
-
-    return fig
-
-
 
 def process_csv(csv_file, summary_text=None):
     input_folder = "input"
@@ -521,6 +493,11 @@ def main():
                 entities['similarity'] = score
                 st.session_state.entities = entities
 
+                importance = st.session_state.entities[st.session_state.sort_by]
+                similarity = st.session_state.entities["similarity"]
+                
+                st.session_state.odps = (importance* similarity).sum() /importance.sum()
+
             st.session_state.entities = entities
             st.session_state.G = G
             st.session_state.entities_raw = entities_raw
@@ -588,11 +565,13 @@ def main():
         if 'summary_entities' in st.session_state:
             columns_to_display += [st.session_state.sort_by, 'similarity', 'most_similar_summary']
             st.session_state.entities_colored = st.session_state.entities[columns_to_display].style.apply(apply_row_colors2, axis=1)
-            st.dataframe(st.session_state.entities_colored, use_container_width=True, height=250)
+            st.dataframe(st.session_state.entities_colored, use_container_width=True, height=200)
+            
+            st.write(f"Opinion Diversity Preservation Score: :blue[{st.session_state.odps.round(3)}]")
         else:
             columns_to_display += [st.session_state.sort_by]
             st.session_state.entities_colored = st.session_state.entities[columns_to_display].style.apply(apply_row_colors, axis=1)
-            st.dataframe(st.session_state.entities_colored, use_container_width=True, height=250)
+            st.dataframe(st.session_state.entities_colored, use_container_width=True, height=200)
 
         st.subheader("Network Visualization")
         if 'network_fig' in st.session_state:
