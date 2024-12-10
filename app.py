@@ -13,6 +13,8 @@ from scipy.cluster.hierarchy import linkage, fcluster
 from sklearn.metrics.pairwise import cosine_distances
 import plotly.graph_objects as go
 import streamlit as st
+import yaml
+from openai import OpenAI
 
 
 # カスタムCSSを更新して、テーブルの装飾を追加
@@ -110,6 +112,24 @@ st.markdown("""
 
 SIMILARYTY_THRESHOLD = 0.5
 
+def load_settings(config_path="settings.yaml"):
+    try:
+        with open(config_path, "r") as file:
+            config = yaml.safe_load(file)
+            if not config.get("llm", {}).get("api_key") or not config.get("llm", {}).get("model"):
+                raise ValueError("API key or model not found in settings.yaml")
+            return config
+    except Exception as e:
+        st.error(f"Error loading settings: {e}")
+        return None
+
+settings = load_settings()
+if settings:
+    api_key = settings["llm"]["api_key"]
+    model = settings["llm"]["model"]
+    client = OpenAI(api_key=api_key)
+else:
+    st.stop()
 
 def find_closest_name(cluster_num, embeddings, center, names):
     distances = cosine_distances(np.stack(embeddings), center.reshape(1, -1))
@@ -331,8 +351,10 @@ def process_csv(csv_file, summary_text=None):
     try:
         result = subprocess.run(["python", "-m", "graphrag.index", "--root", "."], 
                                 capture_output=True, text=True, check=True)
+                        
         st.success("Graph creation completed successfully.")
 
+        
         # summary_textがある場合（summary_inputから来た場合）のみ
         if summary_text:
             latest_folder = get_latest_output_folder()
@@ -344,6 +366,9 @@ def process_csv(csv_file, summary_text=None):
                 shutil.copytree(src_folder, dst_folder)
                 st.success(f"Copied latest output to {dst_folder}")
                 
+                with open(os.path.join(dst_folder, "summary.txt"), "w", encoding="utf-8") as f:
+                    f.write(summary_text)
+
                 # output_summaryフォルダが存在する場合は削除
                 if os.path.exists(src_folder):
                     shutil.rmtree(src_folder)
@@ -356,6 +381,45 @@ def process_csv(csv_file, summary_text=None):
 def get_latest_output_folder(output_dir = "output"):
     folders = [f for f in os.listdir(output_dir) if os.path.isdir(os.path.join(output_dir, f))]
     return max(folders, key=lambda x: os.path.getctime(os.path.join(output_dir, x))) if folders else None
+
+    
+def generate_summary(sources, summary_text=None):
+    if summary_text:
+        # summary_textが与えられている場合
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Please refine the provided summary to ensure it incorporates all relevant opinions "
+                    "from the sources below while maintaining clarity and coherence."
+                ),
+            },
+            {"role": "user", "content": summary_text + "\n" + "\n".join(f"- {source}" for source in sources)},
+        ]
+    else:
+        # summary_textが与えられていない場合
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Please generate a summary that incorporates all relevant opinions from the following sources, "
+                    "presenting them cohesively and without using bullet points."
+                ),
+            },
+            {"role": "user", "content": "\n".join(f"- {source}" for source in sources)},
+        ]
+
+    
+    try:
+        completion = client.chat.completions.create(
+            model=model,
+            messages=messages
+        )
+        summary = completion.choices[0].message.content
+    except Exception as e:
+        st.error(f"Error generating summary: {e}")
+        summary = "要約の生成に失敗しました。"
+    return summary
 
 def main():
     # Sidebar
@@ -446,9 +510,14 @@ def main():
                                 # summary_entitiesを読み込む
                                 summary_folder_path = os.path.join("output_summary", latest_folder)
                                 summary_entities = load_summary_entities(summary_folder_path)
+                                with open(os.path.join(summary_folder_path, "summary.txt"), "r", encoding="utf-8") as f:
+                                    summary_text = f.read()
+
                                 if summary_entities is not None:
                                     st.session_state.summary_entities = summary_entities
                                     st.session_state.summary_changed = True
+                                    st.session_state.summary_text = summary_text
+
                                     st.success(f"Reanalysis completed. Summary data updated from {latest_folder}")
                                 else:
                                     st.warning(f"No entities found in {latest_folder}")
@@ -460,9 +529,12 @@ def main():
             if selected_summary_folder:
                 summary_folder_path = os.path.join("output_summary", selected_summary_folder)
                 summary_entities = load_summary_entities(summary_folder_path)
+                with open(os.path.join(summary_folder_path, "summary.txt"), "r", encoding="utf-8") as f:
+                    summary_text = f.read()
                 if summary_entities is not None:
                     st.session_state.summary_entities = summary_entities
                     st.session_state.summary_changed = True
+                    st.session_state.summary_text = summary_text
                     st.success(f"Summary entities loaded from {selected_summary_folder}")
                 else:
                     st.warning(f"No entities found in {selected_summary_folder}")
@@ -517,73 +589,87 @@ def main():
             st.success("Analysis completed.")
 
     if 'entities' in st.session_state:
+        
         st.subheader("Analysis Results")
 
+        col1, col2 = st.columns([2, 1])  # 左: 2, 右: 1 の比率でカラムを分割
+        with col1:
+            # Add dropdown for sorting
+            sort_options = ['PageRank', 'Betweenness', 'Closeness', 'Eigenvector', 'Degree']
+            st.session_state.sort_options = sort_options
 
-        # Add dropdown for sorting
-        sort_options = ['PageRank', 'Betweenness', 'Closeness', 'Eigenvector', 'Degree']
-        st.session_state.sort_options = sort_options
+            sort_by = st.selectbox("Sort by:", sort_options)
+            st.session_state.sort_by = sort_by
 
-        sort_by = st.selectbox("Sort by:", sort_options)
-        st.session_state.sort_by = sort_by
-
-        if sort_by not in st.session_state.entities.columns:  
-            if sort_by == "PageRank":
-                d = nx.pagerank(G)
-                st.session_state.entities["PageRank"] = [d[node] for node in st.session_state.entities["source"]]
-            elif sort_by == "Betweenness":
-                d = nx.betweenness_centrality(G)
-                st.session_state.entities["Betweenness"] = [d[node] for node in st.session_state.entities["source"]]
-            elif sort_by == "Closeness":
-                d = nx.closeness_centrality(G)
-                st.session_state.entities["Closeness"] = [d[node] for node in st.session_state.entities["source"]]
-            elif sort_by == "Eigenvector":
-                d = nx.eigenvector_centrality(G)
-                st.session_state.entities["Eigenvector"] = [d[node] for node in st.session_state.entities["source"]]
-            elif sort_by == "Degree":
-                d = nx.degree_centrality(G)
-                st.session_state.entities["Degree"] = [d[node] for node in st.session_state.entities["source"]]
-
-        
-        st.session_state.entities = st.session_state.entities.sort_values(sort_by, ascending=False).reset_index(drop=True)
-        
-        
-        min_weight = st.session_state.entities[sort_by].min()
-        max_weight = st.session_state.entities[sort_by].max()
-        
-        def apply_row_colors(row):
-            weight = row[sort_by]
-            return [get_row_color(weight, min_weight, max_weight, cmap = cm.get_cmap('rainbow'), alpha=0.3)] * len(row)
-        
-
-        def apply_row_colors2(row):
-            weight = row['similarity']
-            return [get_row_color(weight, 0, 1, cmap = new_cmap ,alpha=0.3)] * len(row)
-
-
-        columns_to_display = ['source', 'description', 'text_unit_ids']
-        if 'summary_entities' in st.session_state:
-            columns_to_display += [st.session_state.sort_by, 'similarity', 'most_similar_summary']
-            st.session_state.entities_colored = st.session_state.entities[columns_to_display].style.apply(apply_row_colors2, axis=1)
-            st.dataframe(st.session_state.entities_colored, use_container_width=True, height=200)
+            if sort_by not in st.session_state.entities.columns:  
+                if sort_by == "PageRank":
+                    d = nx.pagerank(G)
+                    st.session_state.entities["PageRank"] = [d[node] for node in st.session_state.entities["source"]]
+                elif sort_by == "Betweenness":
+                    d = nx.betweenness_centrality(G)
+                    st.session_state.entities["Betweenness"] = [d[node] for node in st.session_state.entities["source"]]
+                elif sort_by == "Closeness":
+                    d = nx.closeness_centrality(G)
+                    st.session_state.entities["Closeness"] = [d[node] for node in st.session_state.entities["source"]]
+                elif sort_by == "Eigenvector":
+                    d = nx.eigenvector_centrality(G)
+                    st.session_state.entities["Eigenvector"] = [d[node] for node in st.session_state.entities["source"]]
+                elif sort_by == "Degree":
+                    d = nx.degree_centrality(G)
+                    st.session_state.entities["Degree"] = [d[node] for node in st.session_state.entities["source"]]
             
-            st.write(f"Opinion Diversity Preservation Score: :blue[{st.session_state.odps.round(3)}]")
-        else:
-            columns_to_display += [st.session_state.sort_by]
-            st.session_state.entities_colored = st.session_state.entities[columns_to_display].style.apply(apply_row_colors, axis=1)
-            st.dataframe(st.session_state.entities_colored, use_container_width=True, height=200)
+            
+            st.session_state.entities = st.session_state.entities.sort_values(sort_by, ascending=False).reset_index(drop=True)
+            
+            num_items_to_summarize = st.slider("Number of items to summarize", min_value=1, max_value=50, value=10, step=1)
+            st.write(f"### Top {num_items_to_summarize} Opinion Summary by {sort_by}")
+            with st.spinner("Generating summary..."):
+                top_sources = st.session_state.entities['source'].head(num_items_to_summarize)
+                if st.session_state.summary_text:
+                    summary = generate_summary(top_sources, summary_text=st.session_state.summary_text)
+                else:
+                    summary = generate_summary(top_sources, summary_text=None)
+    
+            # 要約結果を表示
+            st.text_area("Summary", summary, height=200)
 
-        st.subheader("Network Visualization")
-        if 'network_fig' in st.session_state:
-            # Create network graph based on selected centrality measure
-            highlight_entities = []
+            
+            min_weight = st.session_state.entities[sort_by].min()
+            max_weight = st.session_state.entities[sort_by].max()
+            
+            def apply_row_colors(row):
+                weight = row[sort_by]
+                return [get_row_color(weight, min_weight, max_weight, cmap = cm.get_cmap('rainbow'), alpha=0.3)] * len(row)
+            
+
+            def apply_row_colors2(row):
+                weight = row['similarity']
+                return [get_row_color(weight, 0, 1, cmap = new_cmap ,alpha=0.3)] * len(row)
+
+
+            columns_to_display = ['source', 'description', 'text_unit_ids']
             if 'summary_entities' in st.session_state:
-                if "similarity" in st.session_state.entities:
-                    highlight_entities = st.session_state.entities[st.session_state.entities['similarity'] > SIMILARYTY_THRESHOLD]['source'].tolist()
-            network_fig = create_network_graph(st.session_state.G, highlight_nodes=highlight_entities, centrality_measure=sort_by)
-            st.plotly_chart(network_fig, use_container_width=True, config={'displayModeBar': True})
-        else:
-            st.info("Network graph not available. Please run the analysis to generate the graph.")
+                columns_to_display += [st.session_state.sort_by, 'similarity', 'most_similar_summary']
+                st.session_state.entities_colored = st.session_state.entities[columns_to_display].style.apply(apply_row_colors2, axis=1)
+                st.dataframe(st.session_state.entities_colored, use_container_width=True, height=500)
+                
+                st.write(f"Opinion Diversity Preservation Score: :blue[{st.session_state.odps.round(3)}]")
+            else:
+                columns_to_display += [st.session_state.sort_by]
+                st.session_state.entities_colored = st.session_state.entities[columns_to_display].style.apply(apply_row_colors, axis=1)
+                st.dataframe(st.session_state.entities_colored, use_container_width=True, height=500)
+        with col2:
+            st.subheader("Network Visualization")
+            if 'network_fig' in st.session_state:
+                # Create network graph based on selected centrality measure
+                highlight_entities = []
+                if 'summary_entities' in st.session_state:
+                    if "similarity" in st.session_state.entities:
+                        highlight_entities = st.session_state.entities[st.session_state.entities['similarity'] > SIMILARYTY_THRESHOLD]['source'].tolist()
+                network_fig = create_network_graph(st.session_state.G, highlight_nodes=highlight_entities, centrality_measure=sort_by)
+                st.plotly_chart(network_fig, use_container_width=True, config={'displayModeBar': True})
+            else:
+                st.info("Network graph not available. Please run the analysis to generate the graph.")
 
     else:
         st.info("Please upload data or select an output folder to view results.")

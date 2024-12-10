@@ -2,7 +2,7 @@
 encoding_model: cl100k_base
 skip_workflows: []
 llm:
-  api_key: <API KEY>
+  api_key: <API-KEY>
   type: openai_chat # or azure_openai_chat
   model: gpt-4o-mini
   model_supports_json: true # recommended if this is available for your model.
@@ -29,7 +29,7 @@ embeddings:
   ## parallelization: override the global parallelization settings for embeddings
   async_mode: threaded # or asyncio
   llm:
-    api_key: <API KEY>
+    api_key: <API-KEY>
     type: openai_embedding # or azure_openai_embedding
     model: text-embedding-3-large
     # api_base: https://<instance>.openai.azure.com
